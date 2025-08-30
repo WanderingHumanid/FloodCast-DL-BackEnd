@@ -1,11 +1,3 @@
-# app.py (Flask Backend) - FINAL VERSION
-# This version uses a two-step process: a regressor for water level forecast
-# and a classifier for ward-specific flood probability.
-# 
-# NOTE FOR DEMO: Probabilities are artificially scaled for visualization purposes
-# since the current model outputs extremely low probabilities in normal conditions.
-# In a real implementation, the model would be calibrated for better probability ranges.
-
 import flask
 from flask_cors import CORS
 from flask import send_from_directory
@@ -13,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 import joblib
 from datetime import datetime, timedelta
-import numpy as np
+import numpy as np 
 import shap
 import rasterio
 from rasterio.mask import mask
@@ -25,10 +17,17 @@ import logging
 import config  # Import the configuration settings
 
 # --- Configure Logging ---
+# Ensure logs directory exists
+os.makedirs(os.path.dirname(config.LOG_FILE), exist_ok=True)
+
+# Configure logging to write to file and console
 logging.basicConfig(
-    filename=config.LOG_FILE,
     level=getattr(logging, config.LOG_LEVEL),
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(config.LOG_FILE),
+        logging.StreamHandler()  # This will log to console as well
+    ]
 )
 
 # --- Initialize Flask App ---
@@ -641,4 +640,6 @@ def register_alert():
         return flask.jsonify({"error": "Failed to register alert"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host=config.API_HOST, port=config.API_PORT)
+    # Use DEBUG mode in development only
+    debug_mode = config.LOG_LEVEL == "DEBUG" and os.environ.get('ENVIRONMENT', 'development') != 'production'
+    app.run(debug=debug_mode, host=config.API_HOST, port=config.API_PORT)
