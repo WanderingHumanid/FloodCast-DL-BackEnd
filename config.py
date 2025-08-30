@@ -41,6 +41,11 @@ API_HOST = os.environ.get('API_HOST', '0.0.0.0')  # Use 0.0.0.0 to bind to all i
 LOG_FILE = os.environ.get('LOG_FILE', "logs/app_debug.log")
 
 # Validate LOG_LEVEL - ensure it's a valid logging level
-_log_level = os.environ.get('LOG_LEVEL', "DEBUG")
+_log_level = os.environ.get('LOG_LEVEL', "DEBUG").upper()  # Convert to uppercase for consistent comparison
 valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LOG_LEVEL = _log_level if _log_level in valid_log_levels else "INFO"
+
+# Add any additional Render-specific environment variables here if needed
+
+# Ensure other common environment variables are supported
+DEBUG = parse_bool(os.environ.get('DEBUG', 'False'))  # Debug mode flag for application settings
