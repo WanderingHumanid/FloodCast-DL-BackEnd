@@ -50,6 +50,19 @@ def after_request(response):
     
     return response
 
+# Health check endpoint for deployment verification
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint to verify the API is running"""
+    app_version = getattr(config, 'APP_VERSION', '1.0.0')
+    return flask.jsonify({
+        'status': 'ok',
+        'version': app_version,
+        'environment': config.FLASK_ENV,
+        'timestamp': datetime.now().isoformat()
+    })
+    return response
+
 # --- Load all necessary files once on startup ---
 try:
     print("Loading models and data files...")

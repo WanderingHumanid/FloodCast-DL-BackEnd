@@ -1,9 +1,23 @@
 # FloodCast Configuration
 import os
-from distutils.util import strtobool
+
+# Helper function to parse boolean strings
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif value.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise ValueError(f"Boolean value expected, got: {value}")
+
+# App Information
+APP_VERSION = os.environ.get('APP_VERSION', '1.0.0')
+FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
 
 # Model Selection
-USE_ENHANCED_MODEL = bool(strtobool(os.environ.get('USE_ENHANCED_MODEL', 'True')))
+USE_ENHANCED_MODEL = parse_bool(os.environ.get('USE_ENHANCED_MODEL', 'True'))
 
 # Model Paths
 ENHANCED_MODEL_PATH = os.environ.get('ENHANCED_MODEL_PATH', "models/floodsense_xgb_enhanced.pkl")
