@@ -31,7 +31,7 @@ def check_imports():
     print("\n=== Import Checks ===")
     modules = [
         'flask', 'flask_cors', 'pandas', 'numpy', 'joblib', 
-        'geopandas', 'shap', 'rasterio'
+        'geopandas', 'shap', 'rasterio', 'xgboost'
     ]
     
     for module in modules:

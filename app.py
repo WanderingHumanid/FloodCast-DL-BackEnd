@@ -77,9 +77,23 @@ try:
         data_path = config.NON_TIDAL_DATA_PATH
         print(f"Using original model without tidal data from {model_path}")
         
+    try:
+        # Ensure required modules are available
+        import xgboost
+        logging.info("XGBoost module loaded successfully")
+    except ImportError:
+        print("❌ CRITICAL ERROR: Required module 'xgboost' not found. Please install it using 'pip install xgboost'")
+        logging.error("Required module 'xgboost' not found")
+        exit(1)
+        
     # Load models
-    REGRESSION_MODEL = joblib.load(model_path)
-    CLASSIFIER_MODEL = joblib.load(config.CLASSIFIER_MODEL_PATH)
+    try:
+        REGRESSION_MODEL = joblib.load(model_path)
+        CLASSIFIER_MODEL = joblib.load(config.CLASSIFIER_MODEL_PATH)
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR: Could not load model files: {e}")
+        logging.error(f"Model loading error: {e}")
+        exit(1)
     
     # Load datasets
     TIME_SERIES_DF = pd.read_csv(data_path, index_col=0, parse_dates=True)
@@ -92,9 +106,11 @@ try:
     WARDS_GEO['Name'] = WARDS_GEO['Name'].astype(str)
 
     print("✅ Files loaded successfully.")
+    logging.info("All data files and models loaded successfully")
 except FileNotFoundError as e:
     print(f"❌ CRITICAL ERROR: Could not load a required file: {e}")
-    exit()
+    logging.error(f"FileNotFoundError: {e}")
+    exit(1)
 
 # --- Feature Preparation Function ---
 def prepare_time_features(df):
