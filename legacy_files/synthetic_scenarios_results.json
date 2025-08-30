@@ -1,0 +1,24 @@
+{
+  "synthetic_scenarios": {
+    "Heavy Rainfall (3x)": {
+      "max_increase": 6.83,
+      "avg_increase": -17.38,
+      "samples": 713
+    },
+    "Extreme High Tide (1.5x)": {
+      "max_increase": 6.83,
+      "avg_increase": -17.38,
+      "samples": 713
+    },
+    "Combined Rain + Tide": {
+      "max_increase": 6.83,
+      "avg_increase": -17.38,
+      "samples": 713
+    },
+    "Cyclonic Pressure Drop": {
+      "max_increase": 6.83,
+      "avg_increase": -18.85,
+      "samples": 713
+    }
+  }
+}

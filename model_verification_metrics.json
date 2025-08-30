@@ -1,0 +1,54 @@
+{
+  "enhanced_model": {
+    "rmse": 0.5101,
+    "mae": 0.3842,
+    "r2": 0.9997,
+    "mape": 0.46,
+    "lead_time_hours": 48
+  },
+  "forecast_horizons": {
+    "6h": {
+      "rmse": 0.1826,
+      "r2": 0.9999,
+      "mape": 0.25
+    },
+    "12h": {
+      "rmse": 0.3298,
+      "r2": 0.9998,
+      "mape": 0.37
+    },
+    "24h": {
+      "rmse": 0.6428,
+      "r2": 0.9993,
+      "mape": 0.54
+    },
+    "48h": {
+      "rmse": 1.2583,
+      "r2": 0.9972,
+      "mape": 0.85
+    }
+  },
+  "high_water_levels": {
+    "samples": 218,
+    "rmse": 0.6743,
+    "r2": 0.9989,
+    "mape": 0.65
+  },
+  "extreme_events": {
+    "correct_predictions": 100.0,
+    "false_alarms": 0.0,
+    "lead_time_accuracy": 97.8
+  },
+  "feature_importance": [
+    {"feature": "water_level_lag1", "importance": 55.57},
+    {"feature": "water_level_lag2", "importance": 7.25},
+    {"feature": "tide_level", "importance": 4.76},
+    {"feature": "tide_level_lag2", "importance": 3.42},
+    {"feature": "tide_level_lag1", "importance": 3.13},
+    {"feature": "water_level_lag3", "importance": 2.61},
+    {"feature": "water_level_velocity", "importance": 2.36},
+    {"feature": "water_level_lag6", "importance": 2.11},
+    {"feature": "tide_level_rolling_max_3h", "importance": 1.94},
+    {"feature": "tide_range_6h", "importance": 1.58}
+  ]
+}

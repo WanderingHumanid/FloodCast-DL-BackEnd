@@ -1,0 +1,13 @@
+Scenario,Rain (mm),Water Level (cm),Flood Probability (%)
+Heavy Rain,50,150,87.5
+Moderate Rain,15,100,45.2
+Light Rain,5,80,12.8
+No Rain,0,60,3.2
+High Tide + Heavy Rain,50,150,95.7
+High Tide + Moderate Rain,15,100,62.3
+High Tide + Light Rain,5,80,28.5
+High Tide Only,0,60,15.9
+Spring Tide,0,70,20.4
+Neap Tide,0,45,1.8
+Monsoon (Heavy Rain + High Tide),75,180,98.2
+Dry Season (No Rain + Low Tide),0,40,0.5
