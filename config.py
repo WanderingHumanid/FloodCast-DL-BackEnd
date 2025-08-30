@@ -39,4 +39,8 @@ API_HOST = os.environ.get('API_HOST', '0.0.0.0')  # Use 0.0.0.0 to bind to all i
 
 # Logging
 LOG_FILE = os.environ.get('LOG_FILE', "logs/app_debug.log")
-LOG_LEVEL = os.environ.get('LOG_LEVEL', "DEBUG")
+
+# Validate LOG_LEVEL - ensure it's a valid logging level
+_log_level = os.environ.get('LOG_LEVEL', "DEBUG")
+valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LOG_LEVEL = _log_level if _log_level in valid_log_levels else "INFO"

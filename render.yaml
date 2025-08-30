@@ -13,3 +13,5 @@ services:
         value: "False"
       - key: FLASK_ENV
         value: "production"
+      - key: LOG_LEVEL
+        value: "INFO"

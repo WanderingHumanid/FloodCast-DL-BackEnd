@@ -40,6 +40,20 @@ def check_imports():
             print(f"Successfully imported {module}")
         except ImportError as e:
             print(f"Failed to import {module}: {e}")
+    
+    # Check logging configuration
+    print("\n=== Logging Configuration Check ===")
+    import logging
+    import config
+    print(f"LOG_LEVEL from config: {config.LOG_LEVEL}")
+    print(f"LOG_LEVEL type: {type(config.LOG_LEVEL)}")
+    try:
+        log_level = getattr(logging, config.LOG_LEVEL)
+        print(f"Resolved log level: {log_level}")
+        print("✓ Logging configuration is valid")
+    except (AttributeError, TypeError) as e:
+        print(f"❌ Invalid logging configuration: {e}")
+        print("This will cause deployment to fail.")
 
 if __name__ == "__main__":
     check_environment()
