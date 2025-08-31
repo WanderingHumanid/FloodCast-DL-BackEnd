@@ -5,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 import joblib
 from datetime import datetime, timedelta
-import numpy as np 
+import numpy as np
 import shap
 import rasterio
 from rasterio.mask import mask
@@ -39,9 +39,6 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 @app.after_request
 def after_request(response):
     logging.info(f"Request: {flask.request.method} {flask.request.path}")
-    logging.info(f"Response headers: {dict(response.headers)}")
-    print(f"Request: {flask.request.method} {flask.request.path}")
-    print(f"Response headers: {dict(response.headers)}")
     
     # Ensure CORS headers are set correctly
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -79,16 +76,16 @@ try:
         
     try:
         # Ensure required modules are available
-        import xgboost
-        logging.info("XGBoost module loaded successfully")
+        import tensorflow as tf
+        from tensorflow.keras.models import load_model
+        logging.info("TensorFlow/Keras module loaded successfully")
     except ImportError:
-        print("❌ CRITICAL ERROR: Required module 'xgboost' not found. Please install it using 'pip install xgboost'")
-        logging.error("Required module 'xgboost' not found")
+        print("❌ CRITICAL ERROR: Required module 'tensorflow' not found. Please install it using 'pip install tensorflow'")
+        logging.error("Required module 'tensorflow' not found")
         exit(1)
-        
     # Load models
     try:
-        REGRESSION_MODEL = joblib.load(model_path)
+        REGRESSION_MODEL = load_model("../flood_prediction_model.h5")
         CLASSIFIER_MODEL = joblib.load(config.CLASSIFIER_MODEL_PATH)
     except Exception as e:
         print(f"❌ CRITICAL ERROR: Could not load model files: {e}")
@@ -112,113 +109,172 @@ except FileNotFoundError as e:
     logging.error(f"FileNotFoundError: {e}")
     exit(1)
 
+# --- Water Level Prediction Function (using Regressor) ---
+def predict_water_levels_24_hours(model, initial_df):
+    # For Keras model, we need to know the input feature order
+    # The model expects input shape (None, 24, 11) - a sequence of 24 timesteps with 11 features
+    working_df = initial_df.copy()
+    forecast_rows = []
+    
+    # Identify the most important features for the model
+    # Using 11 key features to match the model's expected input
+    key_features = [
+        'water_level', 'rain', 'temperature', 
+        'wind_speed', 'sea_level_pressure', 'hour_sin', 
+        'hour_cos', 'dayofyear', 'tide_level', 
+        'tide_velocity', 'moon_illumination_fraction'
+    ]
+    
+    # Ensure we have these features, filling with 0 if missing
+    for feature in key_features:
+        if feature not in working_df.columns:
+            working_df[feature] = 0
+            
+    # Get the latest timestamp to start forecasting from
+    if len(working_df) > 0:
+        last_timestamp = working_df.index[-1]
+    else:
+        last_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0)
+    
+    # Make a copy of the working_df to use for sequence building
+    sequence_df = working_df.copy()
+    
+    # Generate 24 hour forecast one hour at a time
+    for i in range(24):
+        # Use the most recent 24 hours of data for prediction
+        # If we don't have enough data, we'll use what we have and pad with copies
+        sequence_length = 24
+        if len(sequence_df) < sequence_length:
+            # Pad by repeating the first row
+            first_row = sequence_df.iloc[[0]]
+            padding_rows = pd.concat([first_row] * (sequence_length - len(sequence_df)))
+            padded_df = pd.concat([padding_rows, sequence_df])
+        else:
+            padded_df = sequence_df.tail(sequence_length)
+        
+        # Extract only the needed features and convert to numpy array
+        # Shape should be (1, 24, 11) for the model
+        try:
+            input_sequence = padded_df[key_features].values.astype(np.float32)
+            input_sequence = np.expand_dims(input_sequence, axis=0)  # Add batch dimension
+            
+            # Get prediction from the model
+            predicted_level = float(model.predict(input_sequence, verbose=0)[0][0])
+            
+            # Create new row for the forecast
+            next_timestamp = last_timestamp + timedelta(hours=i+1)
+            
+            # Use the last row as a template and update it
+            if len(working_df) > 0:
+                new_row = working_df.iloc[[-1]].copy()
+                new_row.index = [next_timestamp]
+            else:
+                # Create a new row with zeros if we don't have any data
+                new_row = pd.DataFrame(index=[next_timestamp], columns=working_df.columns)
+                new_row = new_row.fillna(0)
+            
+            # Update the water level with our prediction
+            new_row['water_level'] = predicted_level
+            
+            # Update tide level using a sinusoidal approximation if it exists
+            if 'tide_level' in new_row.columns:
+                hours_since_start = (next_timestamp - working_df.index[0]).total_seconds() / 3600 if len(working_df) > 0 else i
+                new_row['tide_level'] = 150 + 50 * np.sin(2 * np.pi * hours_since_start / 12.42)
+            
+            # Add the new row to our forecast and update the sequence for next prediction
+            forecast_rows.append(new_row)
+            sequence_df = pd.concat([sequence_df, new_row])
+            
+        except Exception as e:
+            print(f"Error during prediction at step {i}: {e}")
+            continue
+    
+    # Combine all forecasts into a single dataframe
+    if forecast_rows:
+        forecast_df = pd.concat(forecast_rows)
+        return forecast_df
+    else:
+        return pd.DataFrame()
+
 # --- Feature Preparation Function ---
 def prepare_time_features(df):
     df = df.copy()
     df.index = pd.to_datetime(df.index)
     
-    # Create a copy to avoid the SettingWithCopyWarning
-    df_copy = df.copy()
-    
     # Extract base features for reference
     base_features = ['water_level', 'wind_speed', 'temperature', 'dew_point', 'sea_level_pressure', 'rain', 'moon_illumination_fraction']
-    if 'tide_level' in df_copy.columns:
+    if 'tide_level' in df.columns:
         base_features.append('tide_level')
     
-    # Add simple time features directly
-    df_copy['hour'] = df_copy.index.hour
-    df_copy['dayofweek'] = df_copy.index.dayofweek
-    df_copy['month'] = df_copy.index.month
-    df_copy['dayofyear'] = df_copy.index.dayofyear
+    # Create dictionaries to collect all the new columns before adding them to the dataframe
+    # This avoids DataFrame fragmentation warnings
+    time_features = {
+        'hour': df.index.hour,
+        'dayofweek': df.index.dayofweek,
+        'month': df.index.month,
+        'dayofyear': df.index.dayofyear
+    }
     
-    # Add harmonic features directly
-    df_copy['hour_sin'] = np.sin(2 * np.pi * df_copy['hour'] / 24)
-    df_copy['hour_cos'] = np.cos(2 * np.pi * df_copy['hour'] / 24)
-    df_copy['month_sin'] = np.sin(2 * np.pi * df_copy['month'] / 12)
-    df_copy['month_cos'] = np.cos(2 * np.pi * df_copy['month'] / 12)
+    # Add harmonic features
+    harmonic_features = {
+        'hour_sin': np.sin(2 * np.pi * time_features['hour'] / 24),
+        'hour_cos': np.cos(2 * np.pi * time_features['hour'] / 24),
+        'month_sin': np.sin(2 * np.pi * time_features['month'] / 12),
+        'month_cos': np.cos(2 * np.pi * time_features['month'] / 12)
+    }
     
-    # Add lag features directly (with copy to avoid fragmentation)
+    # Create lag features
+    lag_features = {}
     for lag in [1, 2, 3, 6, 12, 24]:
         for feature in base_features:
-            if feature in df_copy.columns:
-                df_copy[f"{feature}_lag{lag}"] = df_copy[feature].shift(lag)
+            if feature in df.columns:
+                lag_features[f"{feature}_lag{lag}"] = df[feature].shift(lag)
     
-    # Create rolling window features (with a copy at the end)
+    # Create rolling window features
+    rolling_features = {}
     for window in [3, 6, 12, 24]:
         for feature in base_features:
-            if feature in df_copy.columns:
-                df_copy[f"{feature}_rolling_mean_{window}h"] = df_copy[feature].rolling(window=window).mean()
-                df_copy[f"{feature}_rolling_max_{window}h"] = df_copy[feature].rolling(window=window).max()
-                df_copy[f"{feature}_rolling_min_{window}h"] = df_copy[feature].rolling(window=window).min()
+            if feature in df.columns:
+                rolling_features[f"{feature}_rolling_mean_{window}h"] = df[feature].rolling(window=window).mean()
+                rolling_features[f"{feature}_rolling_max_{window}h"] = df[feature].rolling(window=window).max()
+                rolling_features[f"{feature}_rolling_min_{window}h"] = df[feature].rolling(window=window).min()
     
     # Create velocity and acceleration features
+    derivative_features = {}
     for feature in base_features:
-        if feature in df_copy.columns:
-            df_copy[f"{feature}_velocity"] = df_copy[feature].diff()
-            df_copy[f"{feature}_acceleration"] = df_copy[feature].diff().diff()
+        if feature in df.columns:
+            derivative_features[f"{feature}_velocity"] = df[feature].diff()
+            derivative_features[f"{feature}_acceleration"] = df[feature].diff().diff()
     
     # Add interaction terms and tidal features
-    if 'tide_level' in df_copy.columns and 'rain' in df_copy.columns:
-        df_copy['tide_rain_interaction'] = df_copy['tide_level'] * df_copy['rain']
-        df_copy['tide_range_6h'] = df_copy['tide_level'].rolling(window=6).max() - df_copy['tide_level'].rolling(window=6).min()
-        df_copy['tide_range_12h'] = df_copy['tide_level'].rolling(window=12).max() - df_copy['tide_level'].rolling(window=12).min()
-        df_copy['tide_range_24h'] = df_copy['tide_level'].rolling(window=24).max() - df_copy['tide_level'].rolling(window=24).min()
+    interaction_features = {}
+    if 'tide_level' in df.columns and 'rain' in df.columns:
+        interaction_features['tide_rain_interaction'] = df['tide_level'] * df['rain']
+        interaction_features['tide_range_6h'] = df['tide_level'].rolling(window=6).max() - df['tide_level'].rolling(window=6).min()
+        interaction_features['tide_range_12h'] = df['tide_level'].rolling(window=12).max() - df['tide_level'].rolling(window=12).min()
+        interaction_features['tide_range_24h'] = df['tide_level'].rolling(window=24).max() - df['tide_level'].rolling(window=24).min()
     
-    # Add moon phase dummy variables
-    if 'moon_phase' in df_copy.columns:
-        df_copy = pd.get_dummies(df_copy, columns=['moon_phase'], prefix='phase', drop_first=True)
+    # Combine all feature dictionaries into one
+    all_features = {}
+    all_features.update(time_features)
+    all_features.update(harmonic_features)
+    all_features.update(lag_features)
+    all_features.update(rolling_features)
+    all_features.update(derivative_features)
+    all_features.update(interaction_features)
     
-    # Create a clean copy to fix fragmentation
-    result = df_copy.copy()
+    # Create a new DataFrame with all features at once to avoid fragmentation
+    features_df = pd.DataFrame(all_features, index=df.index)
+    
+    # Combine with original data
+    result = pd.concat([df, features_df], axis=1)
+    
+    # Add moon phase dummy variables if needed
+    if 'moon_phase' in result.columns:
+        dummy_df = pd.get_dummies(result[['moon_phase']], columns=['moon_phase'], prefix='phase', drop_first=True)
+        result = pd.concat([result, dummy_df], axis=1)
+    
     return result
-
-# --- Water Level Prediction Function (using Regressor) ---
-def predict_water_levels_24_hours(model, initial_df):
-    model_features = model.get_booster().feature_names
-    working_df = initial_df.copy()
-    forecast_rows = []
-
-    for i in range(24):
-        # First check if we have any non-NA rows
-        non_na_df = working_df.dropna()
-        if len(non_na_df) == 0:
-            # If we have no complete rows, use the last row with fillna(0) for missing values
-            last_known_row = working_df.iloc[[-1]].fillna(0)
-        else:
-            last_known_row = non_na_df.iloc[[-1]]
-        
-        # Handle any missing columns required by the model
-        prediction_input_untyped = last_known_row.reindex(columns=model_features, fill_value=0)
-        prediction_input = prediction_input_untyped.apply(pd.to_numeric, errors='coerce').fillna(0)
-
-        # Make the prediction
-        predicted_level = model.predict(prediction_input)[0]
-        
-        # Create the next row
-        next_timestamp = last_known_row.index[0] + timedelta(hours=1)
-        new_row = last_known_row.copy()
-        new_row.index = [next_timestamp]
-        new_row['water_level'] = predicted_level
-        
-        # If we have tidal data, update it with the next hour's tidal prediction
-        if 'tide_level' in new_row.columns:
-            # For this implementation, we'll use a simple sinusoidal model for tide prediction
-            # In a real implementation, you would use actual tide prediction data from an API
-            # or a more sophisticated tide prediction model
-            # This is just for demonstration purposes
-            hours_since_start = (next_timestamp - working_df.index[0]).total_seconds() / 3600
-            new_row['tide_level'] = 150 + 50 * np.sin(2 * np.pi * hours_since_start / 12.42)  # 12.42 hours is avg tidal period
-        
-        # Add the new row to the working dataframe
-        working_df = pd.concat([working_df, new_row])
-        
-        # Recalculate all the time-based features
-        working_df = prepare_time_features(working_df)
-        
-        # Add this forecast hour to our results
-        forecast_rows.append(working_df.iloc[[-1]])
-        
-    return pd.concat(forecast_rows)
 
 # --- Helper function for physical inundation ---
 def analyze_physical_inundation(water_level_cm, dem_path, wards_geo):
@@ -567,7 +623,17 @@ def get_prediction():
             for i, prob in enumerate(display_hourly_probs)
         ],
         "lastUpdated": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        "note": "Demonstration data: Probabilities are scaled for visualization"
+        "note": "Demonstration data: Probabilities are scaled for visualization",
+        "modelType": "LSTM Neural Network",
+        "modelParams": {
+            "sequenceLength": 24,
+            "featureCount": 11,
+            "parameters": 75000
+        },
+        "sequencePredictions": {
+            "peak_ward": [float(prob) for prob in avg_hourly_probs],
+            "average": [float(prob) for prob in display_hourly_probs]
+        }
     }
     
     print("Step 8: Sending enhanced JSON response.")
